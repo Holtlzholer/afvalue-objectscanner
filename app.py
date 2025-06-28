@@ -25,12 +25,12 @@ def apply_afvalue_style():
 
 # === Config ===
 API_KEY = st.secrets["OPENAI_API_KEY"]
-st.write("🔑 API Key loaded from secrets:", API_KEY[:10] + "...")
 EXCEL_PATH = "categorie_mapping_nl_100_uniek.xlsx"
 DB_PATH = "object_db.sqlite"
 EXCEL_LOG = "resultaten_log.xlsx"
 
 st.set_page_config(page_title="Objectherkenner Afvalue", layout="centered")
+st.write("🔑 API Key loaded from secrets:", API_KEY[:10] + "...")
 apply_afvalue_style()
 st.title("♻️ Objectherkenner voor Afvalue (Mobile Ready V2)")
 st.caption("Gebruik op iPhone via Safari - AI analyse, categorisatie, score en logging.")
