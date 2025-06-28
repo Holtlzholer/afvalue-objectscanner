@@ -24,7 +24,7 @@ def apply_afvalue_style():
     """, unsafe_allow_html=True)
 
 # === Config ===
-API_KEY = "JOUW_OPENAI_API_KEY_HIER"
+API_KEY = st.secrets["OPENAI_API_KEY"]
 EXCEL_PATH = "categorie_mapping_nl_100_uniek.xlsx"
 DB_PATH = "object_db.sqlite"
 EXCEL_LOG = "resultaten_log.xlsx"
