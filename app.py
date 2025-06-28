@@ -31,7 +31,7 @@ EXCEL_LOG = "resultaten_log.xlsx"
 
 st.set_page_config(page_title="Objectherkenner Afvalue", layout="centered")
 apply_afvalue_style()
-st.title("♻️ Objectherkenner voor Afvalue (Mobile Ready)")
+st.title("♻️ Objectherkenner voor Afvalue (Mobile Ready V2)")
 st.caption("Gebruik op iPhone via Safari - AI analyse, categorisatie, score en logging.")
 
 # === AI-analyse functie ===
