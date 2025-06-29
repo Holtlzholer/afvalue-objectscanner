@@ -60,7 +60,7 @@ df_categories = pd.read_excel(EXCEL_PATH)
 unieke_categorieen = df_categories['Categorie'].dropna().unique().tolist()
 categorie_lijst = ", ".join(unieke_categorieen)
 
-# === AI-analyse functie aangepast voor 10 unieke categorieën ===
+# === AI-analyse functie met veilige foutafhandeling ===
 def analyze_image_with_openai(image_path):
     with open(image_path, "rb") as img_file:
         image_data = base64.b64encode(img_file.read()).decode("utf-8")
@@ -88,9 +88,18 @@ def analyze_image_with_openai(image_path):
         }],
         "max_tokens": 400
     }
-    response = requests.post("https://api.openai.com/v1/chat/completions", json=payload, headers=headers)
-    result = response.json()
-    return result["choices"][0]["message"]["content"]
+
+    try:
+        response = requests.post("https://api.openai.com/v1/chat/completions", json=payload, headers=headers)
+        result = response.json()
+        st.write("🔍 API raw result:", result)  # Debug voor pilots
+
+        return result["choices"][0]["message"]["content"]
+
+    except Exception as e:
+        st.error(f"❌ AI-analyse mislukt: {e}")
+        st.info("Probeer het opnieuw of controleer je API-sleutel/credits.")
+        return "Beschrijving: Analyse mislukt\nScore: 0\nCategorie: Onbekend"
 
 # === Extract functies ===
 def extract_score(text):
