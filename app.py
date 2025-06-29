@@ -1,5 +1,4 @@
 import streamlit as st
-import cv2
 import base64
 import requests
 import pandas as pd
@@ -64,9 +63,16 @@ apply_afvalue_style()
 st.title("♻️ Objectherkenner voor Afvalue Mobile")
 st.caption("Gebruik op iPhone via Safari - AI analyse, categorisatie, score en logging.")
 
-# === Upload in plaats van webcam capture ===
+# === Init session_state veilig ===
+if "step" not in st.session_state:
+    st.session_state.step = "start"
+
+if "location" not in st.session_state:
+    st.session_state.location = ""
+
+# === Upload-foto functie ===
 def upload_photo():
-    uploaded_file = st.file_uploader("📷 Maak of upload een foto", type=["jpg", "jpeg", "png"])
+    uploaded_file = st.file_uploader("📷 Maak of upload een foto van het object", type=["jpg", "jpeg", "png"])
     if uploaded_file is not None:
         img_path = "object.jpg"
         with open(img_path, "wb") as f:
@@ -74,16 +80,7 @@ def upload_photo():
         return img_path
     return None
 
-# === Start scherm ===
-if st.session_state.step == "start":
-    st.session_state.location = st.text_input("📍 Voer de locatie in (bijv. Gemeente Enschede)")
-    path = upload_photo()
-    if path:
-        st.session_state.img_path = path
-        st.session_state.step = "confirm"
-        st.rerun()
-
-# === AI-analyse ===
+# === AI-analyse functie ===
 def analyze_image_with_openai(image_path):
     with open(image_path, "rb") as img_file:
         image_data = base64.b64encode(img_file.read()).decode("utf-8")
@@ -114,8 +111,6 @@ def analyze_image_with_openai(image_path):
     }
 
     response = requests.post("https://api.openai.com/v1/chat/completions", json=payload, headers=headers)
-    st.write("🔍 Status code:", response.status_code)
-    st.write("🔍 Response:", response.text)
 
     try:
         result = response.json()
@@ -124,12 +119,12 @@ def analyze_image_with_openai(image_path):
         st.error(f"AI-analyse mislukt: {e}")
         return "AI-analyse mislukt"
 
-# === Extract score ===
+# === Extract score uit AI-output ===
 def extract_score(text):
     match = re.search(r"\b([0-5])\b", text)
     return int(match.group(1)) if match else 0
 
-# === Match categorie ===
+# === Slimme categorisatie met synoniemen ===
 def match_category_with_synonyms(ai_category, df):
     ai_category_lower = ai_category.strip().lower()
     unique_categories = df['Categorie'].str.lower().unique()
@@ -143,7 +138,7 @@ def match_category_with_synonyms(ai_category, df):
             return row['Categorie']
     return "Onbekend"
 
-# === Database logging ===
+# === Opslag in database ===
 def save_to_db(img_path, label, category, score, location):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -169,7 +164,7 @@ def save_to_db(img_path, label, category, score, location):
     conn.commit()
     conn.close()
 
-# === Excel logging ===
+# === Opslag in Excel ===
 def save_to_excel(img_path, label, category, score, location):
     row = {
         "Tijd": datetime.now().isoformat(),
@@ -187,22 +182,14 @@ def save_to_excel(img_path, label, category, score, location):
         df_all = df_new
     df_all.to_excel(EXCEL_LOG, index=False)
 
-# === Stateful UI flow ===
-if "step" not in st.session_state:
-    st.session_state.step = "start"
-
-if "location" not in st.session_state:
-    st.session_state.location = ""
-
 # === Start scherm ===
 if st.session_state.step == "start":
     st.session_state.location = st.text_input("📍 Voer de locatie in (bijv. Gemeente Enschede)")
-    if st.button("📷 Maak foto"):
-        path = capture_photo()
-        if path:
-            st.session_state.img_path = path
-            st.session_state.step = "confirm"
-            st.rerun()
+    path = upload_photo()
+    if path:
+        st.session_state.img_path = path
+        st.session_state.step = "confirm"
+        st.rerun()
 
 # === Foto bevestigen ===
 elif st.session_state.step == "confirm":
