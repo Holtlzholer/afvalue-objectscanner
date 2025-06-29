@@ -38,7 +38,7 @@ EXCEL_LOG = "resultaten_log.xlsx"
 
 st.set_page_config(page_title="Objectherkenner Afvalue", layout="centered")
 apply_afvalue_style()
-st.title("♻️ Objectherkenner Afvalue")
+st.title("♻️ Objectherkenner Afvalue mobile v2")
 
 def analyze_image_with_openai(image_path):
     with open(image_path, "rb") as img_file:
