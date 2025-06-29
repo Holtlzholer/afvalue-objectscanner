@@ -94,13 +94,12 @@ def analyze_image_with_openai(image_path):
 
 # === Extract functies ===
 def extract_score(text):
-    match = re.search(r"\\b([0-5])\\b", text)
+    match = re.search(r"Score:\s*([0-5])", text)
     return int(match.group(1)) if match else 0
 
 def extract_ai_object_type(text):
-    lines = text.strip().split("\n")
-    last_line = lines[-1] if lines else ""
-    return last_line.strip().lower()
+    match = re.search(r"Categorie:\s*(.+)", text)
+    return match.group(1).strip().lower() if match else "onbekend"
 
 def match_category_with_synonyms(ai_object_type, df):
     ai_lower = ai_object_type.lower()
