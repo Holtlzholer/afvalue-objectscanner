@@ -66,7 +66,7 @@ def analyze_image_with_openai(image_path):
 
 def extract_score(text):
     match = re.search(r"\b([0-5])\b", text)
-    return int(match.group(1)) if match else 0
+    return int(match.group(1)) if match else -1
 
 def extract_ai_object_type(text):
     lines = text.strip().split("\n")
@@ -75,23 +75,27 @@ def extract_ai_object_type(text):
 
 def fuzzy_match_category(ai_object_type, df):
     ai_lower = ai_object_type.lower()
-    labels = df['Label'].dropna().unique().tolist()
-    synonyms = []
-    for syn_list in df['Synoniemen'].dropna().tolist():
-        synonyms.extend([s.strip() for s in str(syn_list).split(",")])
-
-    # Combineer alle labels en synoniemen
-    candidates = labels + synonyms
-    best_match = difflib.get_close_matches(ai_lower, candidates, n=1, cutoff=0.5)
+    
+    # Maak lijsten van alle unieke labels en bijhorende categorieën
+    label_map = {}
+    for idx, row in df.iterrows():
+        label_map[row['Label'].strip().lower()] = row['Categorie']
+        synoniemen = str(row['Synoniemen']).split(",")
+        for syn in synoniemen:
+            syn_clean = syn.strip().lower()
+            if syn_clean:
+                label_map[syn_clean] = row['Categorie']
+    
+    candidates = list(label_map.keys())
+    best_match = difflib.get_close_matches(ai_lower, candidates, n=1, cutoff=0.6)
     if best_match:
         match_term = best_match[0]
-        row = df[(df['Label'] == match_term) | (df['Synoniemen'].str.contains(match_term, na=False))]
-        if not row.empty:
-            categorie = row.iloc[0]['Categorie']
-            return categorie, match_term
+        return label_map[match_term], match_term
     return "Onbekend", None
 
 def render_score_stars(score):
+    if score == -1:
+        return "⛔ Staat onbekend"
     stars = "⭐" * score + "☆" * (5 - score)
     if score <= 1:
         desc = "Zeer slechte staat"
