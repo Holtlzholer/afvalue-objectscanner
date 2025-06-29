@@ -64,19 +64,24 @@ apply_afvalue_style()
 st.title("♻️ Objectherkenner voor Afvalue Mobile")
 st.caption("Gebruik op iPhone via Safari - AI analyse, categorisatie, score en logging.")
 
-# === Webcam capture zonder live feed ===
-def capture_photo():
-    cap = cv2.VideoCapture(0)
-    ret, frame = cap.read()
-    cap.release()
+# === Upload in plaats van webcam capture ===
+def upload_photo():
+    uploaded_file = st.file_uploader("📷 Maak of upload een foto", type=["jpg", "jpeg", "png"])
+    if uploaded_file is not None:
+        img_path = "object.jpg"
+        with open(img_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+        return img_path
+    return None
 
-    if not ret:
-        st.error("Geen toegang tot webcam.")
-        return None
-
-    img_path = "object.jpg"
-    cv2.imwrite(img_path, frame)
-    return img_path
+# === Start scherm ===
+if st.session_state.step == "start":
+    st.session_state.location = st.text_input("📍 Voer de locatie in (bijv. Gemeente Enschede)")
+    path = upload_photo()
+    if path:
+        st.session_state.img_path = path
+        st.session_state.step = "confirm"
+        st.rerun()
 
 # === AI-analyse ===
 def analyze_image_with_openai(image_path):
