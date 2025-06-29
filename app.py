@@ -1,4 +1,6 @@
-import streamlit as st 
+# Afvalue Objectscanner SaaS - verbeterde styling en layout responsive versie
+
+import streamlit as st
 import base64
 import requests
 import pandas as pd
@@ -7,56 +9,38 @@ import os
 import re
 from datetime import datetime
 
-# === Custom CSS voor AFVALUE huisstijl ===
+# === AFVALUE huisstijl kleuren en fonts ===
+AFVALUE_GREEN = "#00C853"
+AFVALUE_DARK = "#263238"
+AFVALUE_ACCENT = "#546E7A"
+FONT_FAMILY = "'Poppins', sans-serif"
+
+# === Custom CSS voor consistente AFVALUE styling ===
 def apply_afvalue_style():
-    st.markdown("""
+    st.markdown(f"""
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap');
-        html, body, [class*="css"] {
-            font-family: 'Poppins', sans-serif;
-            color: #000000;
-        }
-        h1, h2, h3 {
-            color: #000000;
-        }
-        .stButton button {
-            background-color: #00C853;
-            color: white;
-            border: none;
-            padding: 0.8em 1.8em;
-            border-radius: 8px;
-            font-weight: 600;
-            font-size: 1rem;
-        }
-        .stButton button:hover {
-            background-color: #00a843;
-        }
-        .stAlert {
-            background-color: #E0F2F1;
-            border-left: 5px solid #00C853;
-        }
-        .centered {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-        .result-box {
-            border: 2px solid #00C853;
-            border-radius: 8px;
-            padding: 1rem;
-            margin-top: 1rem;
-            background: #F9F9F9;
-        }
-        @media (max-width: 768px) {
-            html, body, [class*="css"] {
-                font-size: 16px;
-            }
-        }
-        @media (min-width: 769px) {
-            html, body, [class*="css"] {
-                font-size: 18px;
-            }
-        }
+        html, body, [class*="css"] {{ font-family: {FONT_FAMILY}; color: {AFVALUE_DARK}; }}
+        h1, h2, h3 {{ color: {AFVALUE_DARK}; font-weight: 600; }}
+        .stButton button {{
+            background-color: {AFVALUE_GREEN}; color: white; border: none;
+            padding: 0.6em 1.5em; border-radius: 8px; font-weight: 600; font-size: 1em;
+        }}
+        .stButton button:hover {{ background-color: #00a843; }}
+        .stAlert {{ background-color: #E0F2F1; border-left: 5px solid {AFVALUE_GREEN}; }}
+        .category-box {{
+            background-color: #F1F8E9; padding: 1em; border-radius: 10px;
+            text-align: center; font-size: 1.5em; font-weight: 600; color: {AFVALUE_DARK};
+            margin-bottom: 1em;
+        }}
+        .score-box {{
+            background-color: #E8F5E9; padding: 0.5em 1em; border-radius: 10px;
+            text-align: center; font-size: 1.2em; font-weight: 500; color: {AFVALUE_ACCENT};
+            margin-bottom: 1em;
+        }}
+        @media only screen and (max-width: 768px) {{
+            .stButton button {{ width: 100%; }}
+        }}
         </style>
     """, unsafe_allow_html=True)
 
@@ -68,7 +52,7 @@ EXCEL_LOG = "resultaten_log.xlsx"
 
 st.set_page_config(page_title="Objectherkenner Afvalue", layout="centered")
 apply_afvalue_style()
-st.title("♻️ Objectherkenner voor Afvalue (Mobile Ready)")
+st.title("♻️ Objectherkenner Afvalue")
 st.caption("Gebruik op iPhone via Safari - AI analyse, categorisatie, score en logging.")
 
 # === AI-analyse functie ===
@@ -93,16 +77,12 @@ def analyze_image_with_openai(image_path):
         "max_tokens": 400
     }
     response = requests.post("https://api.openai.com/v1/chat/completions", json=payload, headers=headers)
-    try:
-        result = response.json()
-        return result["choices"][0]["message"]["content"]
-    except Exception as e:
-        st.error(f"AI-analyse mislukt: {e}")
-        return "AI-analyse mislukt"
+    result = response.json()
+    return result["choices"][0]["message"]["content"]
 
 # === Extract functies ===
 def extract_score(text):
-    match = re.search(r"\b([0-5])\b", text)
+    match = re.search(r"\\b([0-5])\\b", text)
     return int(match.group(1)) if match else 0
 
 def extract_ai_object_type(text):
@@ -110,7 +90,6 @@ def extract_ai_object_type(text):
     last_line = lines[-1] if lines else ""
     return last_line.strip().lower()
 
-# === Matching met synoniemen en labels ===
 def match_category_with_synonyms(ai_object_type, df):
     ai_lower = ai_object_type.lower()
     for idx, row in df.iterrows():
@@ -120,7 +99,6 @@ def match_category_with_synonyms(ai_object_type, df):
             return row['Categorie']
     return "Onbekend"
 
-# === Opslag functies ===
 def save_to_db(img_path, label, category, score, location):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -161,7 +139,6 @@ def save_to_excel(img_path, label, category, score, location):
 # === UI Logica ===
 if "step" not in st.session_state:
     st.session_state.step = "start"
-
 if "location" not in st.session_state:
     st.session_state.location = ""
 
@@ -176,7 +153,7 @@ if st.session_state.step == "start":
         st.rerun()
 
 elif st.session_state.step == "confirm":
-    st.image(st.session_state.img_path, caption="📸 Gemaakte foto", width=400)
+    st.image(st.session_state.img_path, caption="📸 Gemaakte foto", use_column_width=True)
     st.write("Wil je deze foto gebruiken voor analyse?")
     col1, col2 = st.columns(2)
     if col1.button("🔁 Opnieuw nemen"):
@@ -187,7 +164,7 @@ elif st.session_state.step == "confirm":
         st.rerun()
 
 elif st.session_state.step == "analyze":
-    st.image(st.session_state.img_path, caption="⏳ AI-analyse bezig...", width=400)
+    st.image(st.session_state.img_path, caption="⏳ AI-analyse bezig...", use_column_width=True)
     with st.spinner("AI denkt na over het object..."):
         desc = analyze_image_with_openai(st.session_state.img_path)
     st.session_state.description = desc
@@ -205,23 +182,17 @@ elif st.session_state.step == "result":
     df = pd.read_excel(EXCEL_PATH)
     category = match_category_with_synonyms(ai_object_type, df)
 
-    st.markdown(f"""
-    <div class='result-box'>
-        <h2>📂 Categorie: <span style='color:#00C853;'>{category}</span></h2>
-        <h2>⭐ Score: <span style='color:#00C853;'>{score} / 5</span></h2>
-        <p><strong>🪪 Objecttype (AI):</strong> {ai_object_type}</p>
-        <p><strong>📍 Locatie:</strong> {st.session_state.location or 'Niet opgegeven'}</p>
-        <p><strong>🕓 Tijd:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f"<div class='category-box'>📂 {category}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='score-box'>⭐ Score: {score}/5</div>", unsafe_allow_html=True)
+
+    st.markdown(f"**📍 Locatie:** `{st.session_state.location or 'Niet opgegeven'}`")
+    st.markdown(f"**🕓 Tijd:** `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`")
 
     save_to_db(st.session_state.img_path, st.session_state.description, category, score, st.session_state.location)
     save_to_excel(st.session_state.img_path, st.session_state.description, category, score, st.session_state.location)
 
     st.success("✅ Gegevens opgeslagen in database en Excel.")
 
-    st.markdown('<div class="centered">', unsafe_allow_html=True)
-    if st.button("🔄 Nieuwe foto maken"):
+    if st.button("📸 Nieuwe foto maken"):
         st.session_state.step = "start"
         st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
