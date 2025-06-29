@@ -1,5 +1,3 @@
-# Afvalue Objectscanner SaaS - verbeterde styling en layout responsive versie
-
 import streamlit as st
 import base64
 import requests
@@ -8,26 +6,18 @@ import sqlite3
 import os
 import re
 from datetime import datetime
+import difflib  # Voor fuzzy matching
 
-# === AFVALUE huisstijl kleuren en fonts ===
+# === AFVALUE huisstijl ===
 AFVALUE_GREEN = "#00C853"
 AFVALUE_DARK = "#263238"
 AFVALUE_ACCENT = "#546E7A"
 FONT_FAMILY = "'Poppins', sans-serif"
 
-# === Custom CSS voor consistente AFVALUE styling ===
 def apply_afvalue_style():
     st.markdown(f"""
         <style>
-        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap');
         html, body, [class*="css"] {{ font-family: {FONT_FAMILY}; color: {AFVALUE_DARK}; }}
-        h1, h2, h3 {{ color: {AFVALUE_DARK}; font-weight: 600; }}
-        .stButton button {{
-            background-color: {AFVALUE_GREEN}; color: white; border: none;
-            padding: 0.6em 1.5em; border-radius: 8px; font-weight: 600; font-size: 1em;
-        }}
-        .stButton button:hover {{ background-color: #00a843; }}
-        .stAlert {{ background-color: #E0F2F1; border-left: 5px solid {AFVALUE_GREEN}; }}
         .category-box {{
             background-color: #F1F8E9; padding: 1em; border-radius: 10px;
             text-align: center; font-size: 1.5em; font-weight: 600; color: {AFVALUE_DARK};
@@ -38,13 +28,9 @@ def apply_afvalue_style():
             text-align: center; font-size: 1.2em; font-weight: 500; color: {AFVALUE_ACCENT};
             margin-bottom: 1em;
         }}
-        @media only screen and (max-width: 768px) {{
-            .stButton button {{ width: 100%; }}
-        }}
         </style>
     """, unsafe_allow_html=True)
 
-# === Config ===
 API_KEY = st.secrets["OPENAI_API_KEY"]
 EXCEL_PATH = "categorie_mapping_nl_100_uniek.xlsx"
 DB_PATH = "object_db.sqlite"
@@ -53,9 +39,7 @@ EXCEL_LOG = "resultaten_log.xlsx"
 st.set_page_config(page_title="Objectherkenner Afvalue", layout="centered")
 apply_afvalue_style()
 st.title("♻️ Objectherkenner Afvalue")
-st.caption("Gebruik op iPhone via Safari - AI analyse, categorisatie, score en logging.")
 
-# === AI-analyse functie ===
 def analyze_image_with_openai(image_path):
     with open(image_path, "rb") as img_file:
         image_data = base64.b64encode(img_file.read()).decode("utf-8")
@@ -80,9 +64,8 @@ def analyze_image_with_openai(image_path):
     result = response.json()
     return result["choices"][0]["message"]["content"]
 
-# === Extract functies ===
 def extract_score(text):
-    match = re.search(r"\\b([0-5])\\b", text)
+    match = re.search(r"\b([0-5])\b", text)
     return int(match.group(1)) if match else 0
 
 def extract_ai_object_type(text):
@@ -90,14 +73,37 @@ def extract_ai_object_type(text):
     last_line = lines[-1] if lines else ""
     return last_line.strip().lower()
 
-def match_category_with_synonyms(ai_object_type, df):
+def fuzzy_match_category(ai_object_type, df):
     ai_lower = ai_object_type.lower()
-    for idx, row in df.iterrows():
-        label_lower = row['Label'].lower()
-        synonyms_lower = [syn.strip().lower() for syn in str(row['Synoniemen']).split(",") if syn]
-        if ai_lower == label_lower or ai_lower in synonyms_lower:
-            return row['Categorie']
-    return "Onbekend"
+    labels = df['Label'].dropna().unique().tolist()
+    synonyms = []
+    for syn_list in df['Synoniemen'].dropna().tolist():
+        synonyms.extend([s.strip() for s in str(syn_list).split(",")])
+
+    # Combineer alle labels en synoniemen
+    candidates = labels + synonyms
+    best_match = difflib.get_close_matches(ai_lower, candidates, n=1, cutoff=0.5)
+    if best_match:
+        match_term = best_match[0]
+        row = df[(df['Label'] == match_term) | (df['Synoniemen'].str.contains(match_term, na=False))]
+        if not row.empty:
+            categorie = row.iloc[0]['Categorie']
+            return categorie, match_term
+    return "Onbekend", None
+
+def render_score_stars(score):
+    stars = "⭐" * score + "☆" * (5 - score)
+    if score <= 1:
+        desc = "Zeer slechte staat"
+    elif score == 2:
+        desc = "Matige staat"
+    elif score == 3:
+        desc = "Redelijke staat"
+    elif score == 4:
+        desc = "Goede staat"
+    else:
+        desc = "Nieuwstaat"
+    return f"{stars} ({desc})"
 
 def save_to_db(img_path, label, category, score, location):
     conn = sqlite3.connect(DB_PATH)
@@ -136,7 +142,7 @@ def save_to_excel(img_path, label, category, score, location):
         df_all = df_new
     df_all.to_excel(EXCEL_LOG, index=False)
 
-# === UI Logica ===
+# === UI logica ===
 if "step" not in st.session_state:
     st.session_state.step = "start"
 if "location" not in st.session_state:
@@ -180,11 +186,12 @@ elif st.session_state.step == "result":
     score = extract_score(st.session_state.description)
     ai_object_type = extract_ai_object_type(st.session_state.description)
     df = pd.read_excel(EXCEL_PATH)
-    category = match_category_with_synonyms(ai_object_type, df)
+    category, matched_term = fuzzy_match_category(ai_object_type, df)
 
     st.markdown(f"<div class='category-box'>📂 {category}</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='score-box'>⭐ Score: {score}/5</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='score-box'>{render_score_stars(score)}</div>", unsafe_allow_html=True)
 
+    st.markdown(f"**🔍 Gematcht op:** `{matched_term}` *(AI zei: {ai_object_type})*")
     st.markdown(f"**📍 Locatie:** `{st.session_state.location or 'Niet opgegeven'}`")
     st.markdown(f"**🕓 Tijd:** `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`")
 
