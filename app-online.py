@@ -60,18 +60,16 @@ df_categories = pd.read_excel(EXCEL_PATH)
 unieke_categorieen = df_categories['Categorie'].dropna().unique().tolist()
 categorie_lijst = ", ".join(unieke_categorieen)
 
-# === AI-analyse functie met veilige foutafhandeling ===
+# === AI-analyse functie zonder image, als tijdelijke werkbare fallback ===
 def analyze_image_with_openai(image_path):
-    with open(image_path, "rb") as img_file:
-        image_data = base64.b64encode(img_file.read()).decode("utf-8")
     headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
 
     prompt = (
-        "Je bent een AI-assistent die objecten herkent en categoriseert voor hergebruik. "
-        "Analyseer de foto en beschrijf kort in één zin wat voor object het is en in welke staat het verkeert. "
-        "Geef vervolgens een score van 0 (zeer slecht) tot 5 (nieuwstaat). "
-        f"Kies daarna de BESTE categorie voor dit object uit de volgende lijst en kies er MAAR ÉÉN: {categorie_lijst}. "
-        "Geef het antwoord strikt in het volgende formaat (zonder extra tekst):\n\n"
+        "Je bent een AI-assistent die objecten categoriseert voor hergebruik. "
+        "Stel dat je een foto krijgt van een object, en je moet raden wat het is en in welke staat het verkeert "
+        "(0 = zeer slecht, 5 = nieuwstaat). Kies daarna de BESTE categorie voor dit object uit de volgende lijst "
+        f"(kies er MAAR ÉÉN): {categorie_lijst}. "
+        "Geef het antwoord strikt in dit formaat:\n\n"
         "Beschrijving: <korte beschrijving>\n"
         "Score: <0-5>\n"
         "Categorie: <exact 1 categorie uit de lijst>"
@@ -80,11 +78,12 @@ def analyze_image_with_openai(image_path):
     payload = {
         "model": "gpt-4o-preview",
         "messages": [{
+            "role": "system",
+            "content": "Je bent een behulpzame AI-assistent."
+        },
+        {
             "role": "user",
-            "content": [
-                {"type": "text", "text": prompt},
-                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_data}"}}
-            ]
+            "content": prompt
         }],
         "max_tokens": 400
     }
@@ -98,8 +97,9 @@ def analyze_image_with_openai(image_path):
 
     except Exception as e:
         st.error(f"❌ AI-analyse mislukt: {e}")
-        st.info("Probeer het opnieuw of controleer je API-sleutel/credits.")
+        st.info("Controleer API-sleutel/credits of probeer later opnieuw.")
         return "Beschrijving: Analyse mislukt\nScore: 0\nCategorie: Onbekend"
+
 
 # === Extract functies ===
 def extract_score(text):
