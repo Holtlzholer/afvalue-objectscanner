@@ -55,18 +55,30 @@ apply_afvalue_style()
 st.title("♻️ Objectherkenner Afvalue")
 st.caption("Gebruik op iPhone via Safari - AI analyse, categorisatie, score en logging.")
 
-# === AI-analyse functie ===
+# === Laden van de 10 unieke categorieën uit Excel ===
+df_categories = pd.read_excel(EXCEL_PATH)
+unieke_categorieen = df_categories['Categorie'].dropna().unique().tolist()
+categorie_lijst = ", ".join(unieke_categorieen)
+
+# === AI-analyse functie aangepast voor 10 unieke categorieën ===
 def analyze_image_with_openai(image_path):
     with open(image_path, "rb") as img_file:
         image_data = base64.b64encode(img_file.read()).decode("utf-8")
     headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
+
     prompt = (
-        "Wat voor object is dit en in welke staat verkeert het? "
-        "Geef een score van 0 (slecht) tot 5 (nieuwstaat). "
-        "Geef vervolgens in ÉÉN WOORD het beste objecttype zoals mok, stoel, emmer."
+        "Je bent een AI-assistent die objecten herkent en categoriseert voor hergebruik. "
+        "Analyseer de foto en beschrijf kort in één zin wat voor object het is en in welke staat het verkeert. "
+        "Geef vervolgens een score van 0 (zeer slecht) tot 5 (nieuwstaat). "
+        f"Kies daarna de BESTE categorie voor dit object uit de volgende lijst en kies er MAAR ÉÉN: {categorie_lijst}. "
+        "Geef het antwoord strikt in het volgende formaat (zonder extra tekst):\n\n"
+        "Beschrijving: <korte beschrijving>\n"
+        "Score: <0-5>\n"
+        "Categorie: <exact 1 categorie uit de lijst>"
     )
+
     payload = {
-        "model": "gpt-4o",
+        "model": "gpt-4o-preview",
         "messages": [{
             "role": "user",
             "content": [
