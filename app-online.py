@@ -139,12 +139,20 @@ def save_to_excel(img_path, label, category, score, location):
         "Score": score
     }
     df_new = pd.DataFrame([row])
-    if os.path.exists(EXCEL_LOG):
-        df_existing = pd.read_excel(EXCEL_LOG)
-        df_all = pd.concat([df_existing, df_new], ignore_index=True)
-    else:
-        df_all = df_new
-    df_all.to_excel(EXCEL_LOG, index=False)
+    try:
+        if os.path.exists(EXCEL_LOG):
+            df_existing = pd.read_excel(EXCEL_LOG)
+            df_all = pd.concat([df_existing, df_new], ignore_index=True)
+        else:
+            df_all = df_new
+        with pd.ExcelWriter(EXCEL_LOG, engine='openpyxl', mode='w') as writer:
+            df_all.to_excel(writer, index=False)
+            writer.book.save(EXCEL_LOG)
+        print(f"✅ Excel succesvol opgeslagen in {EXCEL_LOG}")
+    except PermissionError:
+        st.error(f"⚠️ Kan {EXCEL_LOG} niet opslaan. Sluit het bestand indien het open is in Excel en probeer opnieuw.")
+    except Exception as e:
+        st.error(f"⚠️ Onverwachte fout bij opslaan: {e}")
 
 # === UI logica ===
 if "step" not in st.session_state:
