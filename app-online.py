@@ -6,18 +6,22 @@ import sqlite3
 import os
 import re
 from datetime import datetime
-import difflib  # Voor fuzzy matching
+import difflib
 
-# === AFVALUE huisstijl ===
 AFVALUE_GREEN = "#00C853"
 AFVALUE_DARK = "#263238"
 AFVALUE_ACCENT = "#546E7A"
 FONT_FAMILY = "'Poppins', sans-serif"
 
+BLACKLIST_PATH = "blacklist_test.xlsx"
+API_KEY = st.secrets["OPENAI_API_KEY"]
+
+st.set_page_config(page_title="Afvalue Demo - VG Score", layout="centered")
+
 def apply_afvalue_style():
     st.markdown(f"""
         <style>
-        html, body, [class*="css"] {{ font-family: {FONT_FAMILY}; color: {AFVALUE_DARK}; }}
+        html, body, [class*="css"] {{ font-family: {FONT_FAMILY}; color: {AFVALUE_DARK}; background-color: #FAFAFA; }}
         .category-box {{
             background-color: #F1F8E9; padding: 1em; border-radius: 10px;
             text-align: center; font-size: 1.5em; font-weight: 600; color: {AFVALUE_DARK};
@@ -28,26 +32,24 @@ def apply_afvalue_style():
             text-align: center; font-size: 1.2em; font-weight: 500; color: {AFVALUE_ACCENT};
             margin-bottom: 1em;
         }}
+        .block-title {{
+            font-size: 1.3em; font-weight: bold; margin-top: 1em;
+        }}
         </style>
     """, unsafe_allow_html=True)
 
-API_KEY = st.secrets["OPENAI_API_KEY"]
-EXCEL_PATH = "categorie_mapping_nl_100_uniek.xlsx"
-DB_PATH = "object_db.sqlite"
-EXCEL_LOG = "resultaten_log.xlsx"
-
-st.set_page_config(page_title="Objectherkenner Afvalue", layout="centered")
 apply_afvalue_style()
-st.title("♻️ Objectherkenner Afvalue mobile v2")
+st.title("♻️ Afvalue - VG-score Demo")
 
 def analyze_image_with_openai(image_path):
     with open(image_path, "rb") as img_file:
         image_data = base64.b64encode(img_file.read()).decode("utf-8")
     headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
     prompt = (
-        "Wat voor object is dit en in welke staat verkeert het? "
-        "Geef een score van 0 (slecht) tot 5 (nieuwstaat). "
-        "Geef vervolgens in ÉÉN WOORD het beste objecttype zoals mok, stoel, emmer."
+        "Beantwoord de volgende drie vragen over het object op de foto, zonder verdere toelichting:\n"
+        "1. Staat van het object (kies uit: goed, gebruikt, eenvoudig reparabel, moeilijk reparabel, niet)\n"
+        "2. Kan het object hergebruikt worden? (kies uit: ja, herbestemming mogelijk, nee)\n"
+        "3. Wat is het type object (één woord)?"
     )
     payload = {
         "model": "gpt-4o",
@@ -58,160 +60,102 @@ def analyze_image_with_openai(image_path):
                 {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_data}"}}
             ]
         }],
-        "max_tokens": 400
+        "max_tokens": 200
     }
     response = requests.post("https://api.openai.com/v1/chat/completions", json=payload, headers=headers)
     result = response.json()
     return result["choices"][0]["message"]["content"]
 
-def extract_score(text):
-    match = re.search(r"\b([0-5])\b", text)
-    return int(match.group(1)) if match else -1
+def check_blacklist(label):
+    if not os.path.exists(BLACKLIST_PATH):
+        return False, None
+    df_black = pd.read_excel(BLACKLIST_PATH)
+    for _, row in df_black.iterrows():
+        if row['Label'].lower() in label.lower():
+            return True, row['Reden']
+    return False, None
 
-def extract_ai_object_type(text):
-    lines = text.strip().split("\n")
-    last_line = lines[-1] if lines else ""
-    return last_line.strip().lower()
-
-def fuzzy_match_category(ai_object_type, df):
-    ai_lower = ai_object_type.lower()
-    
-    # Maak lijsten van alle unieke labels en bijhorende categorieën
-    label_map = {}
-    for idx, row in df.iterrows():
-        label_map[row['Label'].strip().lower()] = row['Categorie']
-        synoniemen = str(row['Synoniemen']).split(",")
-        for syn in synoniemen:
-            syn_clean = syn.strip().lower()
-            if syn_clean:
-                label_map[syn_clean] = row['Categorie']
-    
-    candidates = list(label_map.keys())
-    best_match = difflib.get_close_matches(ai_lower, candidates, n=1, cutoff=0.6)
-    if best_match:
-        match_term = best_match[0]
-        return label_map[match_term], match_term
-    return "Onbekend", None
-
-def render_score_stars(score):
-    if score == -1:
-        return "⛔ Staat onbekend"
-    stars = "⭐" * score + "☆" * (5 - score)
-    if score <= 1:
-        desc = "Zeer slechte staat"
-    elif score == 2:
-        desc = "Matige staat"
-    elif score == 3:
-        desc = "Redelijke staat"
-    elif score == 4:
-        desc = "Goede staat"
+def compute_vg_score(label, buyer_choice, cond_score, hergebruikstype):
+    blocked, reason = check_blacklist(label)
+    if blocked:
+        return 0, f"🚫 Niet rechtmatig: {reason}"
+    zeker = 0
+    zeker += 2 if buyer_choice == "Ja" else (1 if buyer_choice == "Twijfel" else 0)
+    zeker += 1
+    zeker += cond_score
+    if hergebruikstype == "ja":
+        hoogwaardig = 2
+    elif hergebruikstype == "herbestemming mogelijk":
+        hoogwaardig = 1
     else:
-        desc = "Nieuwstaat"
-    return f"{stars} ({desc})"
+        hoogwaardig = 0
+    total = min(10, zeker + hoogwaardig)
+    toelichting = f"✅ Rechtmatig. Zeker gebruik: {zeker}/8, Hoogwaardig: {hoogwaardig}/2"
+    return total, toelichting
 
-def save_to_db(img_path, label, category, score, location):
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS objects (
-            id INTEGER PRIMARY KEY,
-            timestamp TEXT,
-            image_path TEXT,
-            label TEXT,
-            category TEXT,
-            score INTEGER,
-            location TEXT
-        )
-    """)
-    cur.execute("INSERT INTO objects VALUES (?, ?, ?, ?, ?, ?, ?)", (
-        None, datetime.now().isoformat(), img_path, label, category, score, location
-    ))
-    conn.commit()
-    conn.close()
+def parse_ai_response(text):
+    lines = text.strip().split("\n")
+    if len(lines) < 3:
+        return "onbekend", "onbekend", "onbekend"
+    return lines[0].strip().lower(), lines[1].strip().lower(), lines[2].strip().lower()
 
-def save_to_excel(img_path, label, category, score, location):
-    row = {
-        "Tijd": datetime.now().isoformat(),
-        "Locatie": location,
-        "Afbeelding": img_path,
-        "Beschrijving": label,
-        "Categorie": category,
-        "Score": score
-    }
-    df_new = pd.DataFrame([row])
-    try:
-        if os.path.exists(EXCEL_LOG):
-            df_existing = pd.read_excel(EXCEL_LOG)
-            df_all = pd.concat([df_existing, df_new], ignore_index=True)
-        else:
-            df_all = df_new
-        with pd.ExcelWriter(EXCEL_LOG, engine='openpyxl', mode='w') as writer:
-            df_all.to_excel(writer, index=False)
-            writer.book.save(EXCEL_LOG)
-        print(f"✅ Excel succesvol opgeslagen in {EXCEL_LOG}")
-    except PermissionError:
-        st.error(f"⚠️ Kan {EXCEL_LOG} niet opslaan. Sluit het bestand indien het open is in Excel en probeer opnieuw.")
-    except Exception as e:
-        st.error(f"⚠️ Onverwachte fout bij opslaan: {e}")
-
-# === UI logica ===
 if "step" not in st.session_state:
     st.session_state.step = "start"
 if "location" not in st.session_state:
     st.session_state.location = ""
 
 if st.session_state.step == "start":
-    st.session_state.location = st.text_input("📍 Voer de locatie in (bijv. Gemeente Arnhem)")
-    uploaded_photo = st.camera_input("📷 Maak een foto van het object")
+    st.session_state.location = st.text_input("📍 Locatie (optioneel)", value="Demo Arnhem")
+    uploaded_photo = st.camera_input("📷 Maak een foto van het object of upload er een")
     if uploaded_photo:
         with open("object.jpg", "wb") as f:
             f.write(uploaded_photo.getbuffer())
         st.session_state.img_path = "object.jpg"
-        st.session_state.step = "confirm"
-        st.rerun()
-
-elif st.session_state.step == "confirm":
-    st.image(st.session_state.img_path, caption="📸 Gemaakte foto", use_column_width=True)
-    st.write("Wil je deze foto gebruiken voor analyse?")
-    col1, col2 = st.columns(2)
-    if col1.button("🔁 Opnieuw nemen"):
-        st.session_state.step = "start"
-        st.rerun()
-    if col2.button("✅ Verstuur naar AI"):
         st.session_state.step = "analyze"
         st.rerun()
 
 elif st.session_state.step == "analyze":
-    st.image(st.session_state.img_path, caption="⏳ AI-analyse bezig...", use_column_width=True)
-    with st.spinner("AI denkt na over het object..."):
-        desc = analyze_image_with_openai(st.session_state.img_path)
-    st.session_state.description = desc
+    st.image(st.session_state.img_path, caption="AI-analyse bezig...", use_column_width=True)
+    with st.spinner("De AI onderzoekt het object..."):
+        ai_output = analyze_image_with_openai(st.session_state.img_path)
+    cond_ai, reuse_ai, label_ai = parse_ai_response(ai_output)
+    st.session_state.ai_output = ai_output
+    st.session_state.cond_ai = cond_ai
+    st.session_state.reuse_ai = reuse_ai
+    st.session_state.label_ai = label_ai
     st.session_state.step = "result"
     st.rerun()
 
 elif st.session_state.step == "result":
-    st.image(st.session_state.img_path, caption="📷 Gekozen foto", use_column_width=True)
-    st.subheader("🧠 AI-analyse")
-    st.markdown("**📋 Beschrijving:**")
-    st.info(st.session_state.description)
+    st.image(st.session_state.img_path, caption="📷 Gekozen object", use_column_width=True)
+    st.subheader("🧠 AI-output")
+    st.code(st.session_state.ai_output)
 
-    score = extract_score(st.session_state.description)
-    ai_object_type = extract_ai_object_type(st.session_state.description)
-    df = pd.read_excel(EXCEL_PATH)
-    category, matched_term = fuzzy_match_category(ai_object_type, df)
+    st.markdown(f"**🔍 AI-label:** `{st.session_state.label_ai}`")
 
-    st.markdown(f"<div class='category-box'>📂 {category}</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='score-box'>{render_score_stars(score)}</div>", unsafe_allow_html=True)
+    buyer_choice = st.selectbox("📥 Is er een afnemer bekend?", ["Twijfel", "Ja", "Nee"], index=0)
 
-    st.markdown(f"**🔍 Gematcht op:** `{matched_term}` *(AI zei: {ai_object_type})*")
-    st.markdown(f"**📍 Locatie:** `{st.session_state.location or 'Niet opgegeven'}`")
-    st.markdown(f"**🕓 Tijd:** `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`")
+    cond_options = ["goed", "gebruikt", "eenvoudig reparabel", "moeilijk reparabel", "niet"]
+    cond_index = cond_options.index(st.session_state.cond_ai) if st.session_state.cond_ai in cond_options else 0
+    cond_choice = st.selectbox("🛠️ Staat van het object:", cond_options, index=cond_index)
+    cond_overridden = cond_choice != st.session_state.cond_ai
+    cond_map = {"goed": 4, "gebruikt": 3, "eenvoudig reparabel": 2, "moeilijk reparabel": 1, "niet": 0}
+    if cond_overridden:
+        st.warning("⚠️ Handmatig aangepast t.o.v. AI-inschatting")
 
-    save_to_db(st.session_state.img_path, st.session_state.description, category, score, st.session_state.location)
-    save_to_excel(st.session_state.img_path, st.session_state.description, category, score, st.session_state.location)
+    reuse_options = ["ja", "herbestemming mogelijk", "nee"]
+    reuse_index = reuse_options.index(st.session_state.reuse_ai) if st.session_state.reuse_ai in reuse_options else 0
+    reuse_choice = st.selectbox("♻️ Kan het object hergebruikt worden?", reuse_options, index=reuse_index)
+    reuse_overridden = reuse_choice != st.session_state.reuse_ai
+    if reuse_overridden:
+        st.warning("⚠️ Handmatig aangepast t.o.v. AI-inschatting")
 
-    st.success("✅ Gegevens opgeslagen in database en Excel.")
+    score, toelichting = compute_vg_score(st.session_state.label_ai, buyer_choice, cond_map[cond_choice], reuse_choice)
 
-    if st.button("📸 Nieuwe foto maken"):
+    st.subheader("🔢 VG-score (Voortgezet Gebruik)")
+    st.metric(label="VG-score", value=f"{score} / 10")
+    st.success(toelichting) if score > 0 else st.error(toelichting)
+
+    if st.button("🔁 Volgende object (reset)"):
         st.session_state.step = "start"
         st.rerun()
