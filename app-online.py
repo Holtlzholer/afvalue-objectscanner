@@ -78,7 +78,7 @@ def check_blacklist(label):
 def compute_vg_score(label, buyer_choice, cond_score, hergebruikstype):
     blocked, reason = check_blacklist(label)
     if blocked:
-        return 0, f"🚫 Niet rechtmatig: {reason}"
+        return 0, f"🚫 Niet rechtmatig: {reason}", 0, 0
     zeker = 0
     zeker += 2 if buyer_choice == "Ja" else (1 if buyer_choice == "Twijfel" else 0)
     zeker += 1
@@ -90,8 +90,8 @@ def compute_vg_score(label, buyer_choice, cond_score, hergebruikstype):
     else:
         hoogwaardig = 0
     total = min(10, zeker + hoogwaardig)
-    toelichting = f"✅ Rechtmatig gebruik bevestigd. Zeker gebruik: {zeker}/8, Hoogwaardig: {hoogwaardig}/2"
-    return total, toelichting
+    toelichting = f"Zeker gebruik: {zeker}/8, Hoogwaardig: {hoogwaardig}/2"
+    return total, toelichting, zeker, hoogwaardig
 
 def parse_ai_response(text):
     lines = text.strip().split("\n")
@@ -128,31 +128,39 @@ elif st.session_state.step == "analyze":
 
 elif st.session_state.step == "result":
     st.image(st.session_state.img_path, caption="📷 Gekozen object", use_column_width=True)
-    st.subheader("🧠 AI-output")
-    st.code(st.session_state.ai_output)
+    st.subheader("🧠 AI-resultaten per vraag")
 
     buyer_choice = st.selectbox("📥 Is er een afnemer bekend?", ["Twijfel", "Ja", "Nee"], index=0)
 
     cond_options = ["goed", "gebruikt", "eenvoudig reparabel", "moeilijk reparabel", "niet"]
     cond_index = cond_options.index(st.session_state.cond_ai) if st.session_state.cond_ai in cond_options else 0
     cond_choice = st.selectbox("🛠️ Staat van het object:", cond_options, index=cond_index)
-    cond_overridden = cond_choice != st.session_state.cond_ai
-    cond_map = {"goed": 4, "gebruikt": 3, "eenvoudig reparabel": 2, "moeilijk reparabel": 1, "niet": 0}
-    if cond_overridden:
-        st.warning("⚠️ Handmatig aangepast t.o.v. AI-inschatting (staat)")
+    st.caption(f"AI antwoord: {st.session_state.cond_ai}")
 
     reuse_options = ["ja", "herbestemming mogelijk", "nee"]
     reuse_index = reuse_options.index(st.session_state.reuse_ai) if st.session_state.reuse_ai in reuse_options else 0
     reuse_choice = st.selectbox("♻️ Kan het object hergebruikt worden?", reuse_options, index=reuse_index)
-    reuse_overridden = reuse_choice != st.session_state.reuse_ai
-    if reuse_overridden:
-        st.warning("⚠️ Handmatig aangepast t.o.v. AI-inschatting (hergebruik)")
+    st.caption(f"AI antwoord: {st.session_state.reuse_ai}")
 
-    score, toelichting = compute_vg_score(st.session_state.label_ai, buyer_choice, cond_map[cond_choice], reuse_choice)
+    score, toelichting, zeker_pts, hoogwaardig_pts = compute_vg_score(
+        st.session_state.label_ai, buyer_choice,
+        {"goed": 4, "gebruikt": 3, "eenvoudig reparabel": 2, "moeilijk reparabel": 1, "niet": 0}[cond_choice],
+        reuse_choice
+    )
 
     st.subheader("🔢 VG-score (Voortgezet Gebruik)")
     st.metric(label="VG-score", value=f"{score} / 10")
-    st.success(toelichting) if score > 0 else st.error(toelichting)
+    st.info(toelichting)
+
+    if zeker_pts == 8 and hoogwaardig_pts == 2:
+        st.success("✅ Rechtmatig gebruik bevestigd")
+
+    if score > 7:
+        st.success("🟢 Goede VG-score (geschikt voor hergebruik)")
+    elif score >= 4:
+        st.warning("🟠 Matige VG-score (mogelijk geschikt)")
+    else:
+        st.error("🔴 Lage VG-score (waarschijnlijk niet geschikt)")
 
     if st.button("🔁 Volgende object (reset)"):
         st.session_state.step = "start"
